@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: flight-reservation-app
-  # namespace: flight-reservation
+  namespace: flight-reservation
   labels:
     app: flight-reservation-app
 spec:
