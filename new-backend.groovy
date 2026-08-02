@@ -10,35 +10,37 @@ pipeline {
 
     stages {
 
-        stage('Code-checkout') {
+        stage('Code Checkout') {
             steps {
                 git branch: 'main',
+                    credentialsId: 'github-credentials',
                     url: 'https://github.com/aniket01299/flight-reservation-backend.git'
             }
         }
 
-        stage('Code-build') {
+        stage('Build') {
             steps {
                 sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('Docker-build') {
+        stage('Docker Build') {
             steps {
-                sh 'docker build -t ${DOCKER_REPO}:${BUILD_NUMBER} .'
+                sh '''
+                docker build -t ${DOCKER_REPO}:${BUILD_NUMBER} .
+                '''
             }
         }
 
-        stage('Docker-login') {
+        stage('Docker Login') {
             steps {
                 withCredentials([
                     usernamePassword(
-                        credentialsId: 'dockerhub_creds',
+                        credentialsId: 'docker-hub-credentials',
                         usernameVariable: 'DOCKER_USERNAME',
                         passwordVariable: 'DOCKER_PASSWORD'
                     )
                 ]) {
-
                     sh '''
                     echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
                     '''
@@ -46,7 +48,7 @@ pipeline {
             }
         }
 
-        stage('Docker-push') {
+        stage('Docker Push') {
             steps {
                 sh '''
                 docker tag ${DOCKER_REPO}:${BUILD_NUMBER} ${DOCKER_USER}/${DOCKER_REPO}:${BUILD_NUMBER}
@@ -58,47 +60,44 @@ pipeline {
             }
         }
 
-        stage('Image-Name-change') {
+        stage('Update Image') {
             steps {
-
                 sh '''
                 sed -i "s|aniiket2025/flight-backend:latest|${DOCKER_USER}/${DOCKER_REPO}:${BUILD_NUMBER}|g" k8s/deployment.yaml
-                '''
 
-                sh 'cat k8s/deployment.yaml'
+                cat k8s/deployment.yaml
+                '''
             }
         }
 
-        stage('EKS-deploy') {
+        stage('Deploy To EKS') {
             steps {
 
                 withCredentials([
                     aws(
-                        credentialsId: 'aws_creds',
+                        credentialsId: 'AWS-Cred',
                         accessKeyVariable: 'AWS_ACCESS_KEY_ID',
                         secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
                     )
                 ]) {
 
                     sh '''
-                    aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${REGION}
+                    aws eks update-kubeconfig --region ${REGION} --name ${CLUSTER_NAME}
 
                     kubectl get nodes
 
-                    kubectl apply -f k8s/ns.yaml
                     kubectl apply -f k8s/deployment.yaml
                     kubectl apply -f k8s/service.yaml
-                    kubectl apply -f k8s/ingress.yaml
 
-                    kubectl get pods -n flight-reservation
-                    kubectl get deployment -n flight-reservation
-                    kubectl get svc -n flight-reservation
-                    kubectl get ingress -n flight-reservation
+                    kubectl rollout status deployment/flight-reservation-app
+
+                    kubectl get deployments
+                    kubectl get pods
+                    kubectl get svc
                     '''
                 }
             }
         }
-
     }
 
     post {
@@ -108,7 +107,7 @@ pipeline {
         }
 
         failure {
-            echo "Pipeline execution failed."
+            echo "Pipeline failed."
         }
 
         always {
